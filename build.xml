@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="ogiqvo" default="ci" basedir=".">
+
+  <property name="dir.bin" location="bin"/>
+  <property name="dir.doc" location="doc"/>
+  <property name="dir.lib" location="lib"/>
+  <property name="dir.test" location="test"/>
+  <property name="dir.tmp" location="tmp"/>
+  <property name="dir.src" location="src"/>
+  <property name="dir.var" location="var"/>
+  <property name="dir.node_modules" location="node_modules"/>
+  <property name="dir.tmp.build" location="${dir.tmp}/build/"/>
+
+  <property name="exec.python" value="python"/>
+  <property name="exec.jar" value="jar"/>
+  <property name="exec.gjslint" value="gjslint"/>
+  <property name="exec.fixjsstyle" value="fixjsstyle"/>
+  <condition property="exec.npm" value="npm"><os family="unix"/></condition>
+  <condition property="exec.npm" value="npm.cmd"><os family="windows"/></condition>
+  <property name="exec.node" value="node"/>
+
+  <property name="dir.closure-util.home" location="node_modules/closure-util/.deps/library/fc6e5e05ebc150be8bb214d2a3fd77798975a6b2"/>
+
+  <target name="npm_install">
+    <exec executable="${exec.npm}" failonerror="true">
+      <arg value="install"/>
+    </exec>
+    
+    <mkdir dir="${dir.tmp}/closure-library/"/>
+    <get src="https://github.com/google/closure-library/archive/master.zip" dest="${dir.tmp}/closure-library" skipexisting="true"/>
+    <unzip src="tmp/closure-library/master.zip" dest="." overwrite="true"/>
+    <copy todir="node_modules/nclosure/third_party/closure-library/" overwrite="true">
+      <fileset dir="closure-library-master/"/>
+    </copy>
+    <delete dir="node_modules/closure-util/.deps/library/fc6e5e05ebc150be8bb214d2a3fd77798975a6b2/"/>
+    <mkdir dir="node_modules/closure-util/.deps/library/fc6e5e05ebc150be8bb214d2a3fd77798975a6b2/"/>
+    <copy todir="node_modules/closure-util/.deps/library/fc6e5e05ebc150be8bb214d2a3fd77798975a6b2/" overwrite="true">
+      <fileset dir="closure-library-master/"/>
+    </copy>
+
+    <mkdir dir="${dir.tmp}/closure-compiler/"/>
+    <get src="http://dl.google.com/closure-compiler/compiler-20141215.zip" dest="${dir.tmp}/closure-compiler" skipexisting="true"/>
+    <unzip src="tmp/closure-compiler/compiler-20141215.zip" dest="tmp/" overwrite="true"/>
+    <delete dir="node_modules/closure-util/.deps/compiler/9285bd30dd02e030aff821d65975845eaa09a102/"/>
+    <mkdir dir="node_modules/closure-util/.deps/compiler/9285bd30dd02e030aff821d65975845eaa09a102/"/>
+    <copy file="tmp/compiler.jar" todir="node_modules/closure-util/.deps/compiler/9285bd30dd02e030aff821d65975845eaa09a102/" overwrite="true"/>
+  </target>
+
+  <target name="nclosure_closure_library_update" depends="npm_install">
+    <delete dir="node_modules/nclosure/third_party/closure-library/closure"/>
+    <copy todir="node_modules/nclosure/third_party/closure-library/closure" overwrite="true">
+      <fileset dir="${dir.closure-util.home}/closure" />
+    </copy>
+  </target>
+
+  <!-- 
+       
+       EXTERNAL LIBRARIES
+       
+  -->
+  
+  <target name="deps.js" depends="npm_install">
+    <exec executable="${exec.python}" failonerror="true" output="deps.js">
+      <arg value="closure-library-master/closure/bin/build/depswriter.py"/>
+      <arg value="--root_with_prefix=src ../../../../../../src"/>
+      <arg value="--root_with_prefix=examples ../../../../../../examples"/>
+      <arg value="--root_with_prefix=node_modules/nclosure/lib/third_party/node ../../../../lib/third_party/node"/>
+    </exec>
+  </target>
+
+  <target name="node_unit_test">
+    <exec executable="${exec.python}">
+      <arg value="${dir.bin}/autorun_minimum_unittest.py"/>
+      <arg value="${dir.src}/js"/>
+      <arg value="${dir.test}/js"/>
+      <arg value="node_modules/.bin/mocha"/>
+      <arg value="testfilter.csv"/>
+    </exec>
+  </target>
+  
+  <target name="node_unit_test_all" depends="deps.js">
+    <exec executable="sh" failonerror="true">
+      <arg value="-c"/>
+      <arg value="find test | grep '.test.js$' | xargs node_modules/.bin/mocha -R tap"/>
+    </exec>
+  </target>
+  
+  <target name="serve" depends="deps.js">
+    <exec executable="node" failonerror="true">
+      <arg value="tasks/serve.js"/>
+    </exec>
+  </target>
+
+  <target name="advanced_compile">
+    <mkdir dir="${dir.tmp.build}/advanced_compiled/"/>
+    <echo message="${name}"/>
+    <exec executable="node" failonerror="true">
+      <arg value="tasks/build.js"/>
+      <arg value="buildcfg/${name}.json"/>
+      <arg value="${dir.tmp.build}/advanced_compiled/${name}.min.js"/>
+    </exec>
+  </target>
+
+  <target name="pre_advanced_compile" depends="nclosure_closure_library_update">
+  </target>
+
+  <target name="build" depends="deps.js,pre_advanced_compile">
+    <antcall target="advanced_compile"><param name="name" value="plain"/></antcall>
+  </target>
+
+  <target name="closure_advanced_compile" depends="build"/>
+
+  <target name="document" depends="npm_install">
+    <mkdir dir="./out"/>
+    <exec executable="node_modules/.bin/docker">
+      <arg value="-i"/>
+      <arg value="${dir.src}"/>
+      <arg value="-o"/>
+      <arg value="./out"/>
+    </exec>
+    <move file="./out" todir="${dir.doc}" force="true" failonerror="true"/>
+  </target>
+
+  <target name="jslint">
+    <exec executable="${exec.gjslint}" failonerror="true">
+      <arg value="${dir.src}/ogiqvo/**/*.js"/>
+    </exec>
+  </target>
+
+  <target name="fixjsstyle">
+    <exec executable="${exec.fixjsstyle}" failonerror="true">
+      <arg value="${dir.src}/schedul/*.js"/>
+    </exec>
+  </target>
+  
+  <target name="ci" depends="node_unit_test_all,closure_advanced_compile,document"/>
+</project>
